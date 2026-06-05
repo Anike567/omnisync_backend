@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserModule } from './modules/user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { getDatabaseConfig } from './config/database.config';
+import { RefreshTokenModule } from './modules/refresh-token/refresh-token.module';
 
 @Module({
   
@@ -15,6 +16,7 @@ import { getDatabaseConfig } from './config/database.config';
     TypeOrmModule.forRoot(getDatabaseConfig()),
     UserModule,
     AuthModule,
+    RefreshTokenModule
   ],
 })
 export class AppModule {}

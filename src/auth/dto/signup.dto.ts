@@ -1,11 +1,11 @@
 // src/modules/user/dto/signup.dto.ts
-import { 
-  IsEmail, 
-  IsNotEmpty, 
-  IsString, 
-  IsMobilePhone, 
-  MinLength, 
-  Matches 
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsString,
+  IsMobilePhone,
+  MinLength,
+  Matches
 } from 'class-validator';
 
 export class SignupDto {
@@ -15,10 +15,14 @@ export class SignupDto {
 
   @IsString()
   @IsNotEmpty()
+  name!: string;
+
+  @IsString()
+  @IsNotEmpty()
   @MinLength(8, { message: 'Password must be at least 8 characters' })
   // Optional: Add regex to ensure a strong password (requires 1 number/letter)
-  @Matches(/((?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$/, { 
-    message: 'Password too weak. Include upper, lower, and numbers.' 
+  @Matches(/((?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$/, {
+    message: 'Password too weak. Include upper, lower, and numbers.'
   })
   password!: string;
 

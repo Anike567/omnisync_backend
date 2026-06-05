@@ -1,6 +1,7 @@
 // src/config/database.config.ts
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { User } from '../modules/user/user.entity';
+import { RefreshToken } from 'src/modules/refresh-token/refresh-token.entity';
 
 export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
   type: 'mysql',
@@ -9,7 +10,7 @@ export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
   username: 'omni_sync_user',
   password: 'your_password', // Replace with the actual password you set in MySQL
   database: 'omni_sync_db',
-  entities: [User],
+  entities: [User, RefreshToken],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: true,
 });

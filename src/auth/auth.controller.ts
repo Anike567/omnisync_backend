@@ -5,6 +5,7 @@ import { LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
 import { JwtAuthGuard } from './guards/jwt-auth/jwt-auth.guard';
 import { RefreshDto } from './dto/refresh.dto';
+import { changePasswordDto } from './dto/changePassword.dto';
 
 
 
@@ -34,5 +35,21 @@ export class AuthController {
         const userId = req.user.userId
         
         return await this.authService.getProfile(userId);
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Post('/logout')
+    async logout(@Req() req){
+        const userId = req.user.userId
+
+        return await this.authService.logout(userId)
+    }
+
+
+    @UseGuards(JwtAuthGuard)
+    @Post("/changepassword")
+    async changePassword(@Req() req, @Body() body: changePasswordDto) { // 2. Fixed missing parentheses on @Body()
+        const userId = req.user.id || req.user.userId;
+        return await this.authService.changePassword(userId, body);
     }
 }

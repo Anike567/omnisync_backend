@@ -8,7 +8,7 @@ export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
   host: 'localhost',
   port: 3306,
   username: 'omni_sync_user',
-  password: 'your_password', // Replace with the actual password you set in MySQL
+  password: 'your_password', 
   database: 'omni_sync_db',
   entities: [User, RefreshToken],
   synchronize: process.env.NODE_ENV !== 'production',

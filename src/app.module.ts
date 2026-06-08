@@ -5,6 +5,8 @@ import { UserModule } from './modules/user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { getDatabaseConfig } from './config/database.config';
 import { RefreshTokenModule } from './modules/refresh-token/refresh-token.module';
+import { ImagesModule } from './images/images.module';
+import { ProductsModule } from './products/products.module';
 
 @Module({
   
@@ -16,7 +18,9 @@ import { RefreshTokenModule } from './modules/refresh-token/refresh-token.module
     TypeOrmModule.forRoot(getDatabaseConfig()),
     UserModule,
     AuthModule,
-    RefreshTokenModule
+    RefreshTokenModule,
+    ImagesModule,
+    ProductsModule
   ],
 })
 export class AppModule {}

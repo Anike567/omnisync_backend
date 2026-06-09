@@ -47,7 +47,9 @@ export class AuthService {
 
         // 2. Generate Tokens (Baking tokenVersion into payload!)
         const payload = { id: user.id, username: user.username, email: user.email, tokenVersion: user.tokenVersion };
-        const accessToken = this.jwtService.sign(payload);
+        const accessToken = this.jwtService.sign(payload, {
+            expiresIn : '15m'
+        });
         const rawRefreshToken = randomUUID();
         const hashedToken = await bcrypt.hash(rawRefreshToken, 10);
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);

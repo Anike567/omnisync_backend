@@ -20,4 +20,7 @@ export class User {
 
   @Column({ nullable: false })
   phoneNumber!: string;
+
+  @Column({type : 'int', default : 1})
+  tokenVersion !: number
 }

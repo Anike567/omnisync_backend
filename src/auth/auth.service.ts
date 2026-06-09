@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Body, ConflictException, Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -10,6 +10,7 @@ import { RefreshToken } from 'src/modules/refresh-token/refresh-token.entity';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { changePasswordDto } from './dto/changePassword.dto';
 
 @Injectable()
 export class AuthService {
@@ -44,36 +45,42 @@ export class AuthService {
             throw new UnauthorizedException('Invalid email or password');
         }
 
-        // 2. Generate Tokens
-        const payload = { id: user.id, username: user.username, email: user.email };
-        const accessToken = this.jwtService.sign(payload);
+        // 2. Generate Tokens (Baking tokenVersion into payload!)
+        const payload = { id: user.id, username: user.username, email: user.email, tokenVersion: user.tokenVersion };
+        const accessToken = this.jwtService.sign(payload, {
+            expiresIn : '15m'
+        });
         const rawRefreshToken = randomUUID();
         const hashedToken = await bcrypt.hash(rawRefreshToken, 10);
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
         // 3. Manage Refresh Token session
-        const existingSession = await this.refreshTokenRepository.findOne({ where: { userId: user.id } });
+        try {
+            const existingSession = await this.refreshTokenRepository.findOne({ where: { userId: user.id } });
 
-        if (existingSession) {
-            await this.refreshTokenRepository.update(existingSession.id, {
-                hashedToken,
-                expiresAt
-            });
-        } else {
-            const newToken = this.refreshTokenRepository.create({
-                userId: user.id,
-                hashedToken,
-                expiresAt
-            });
-            await this.refreshTokenRepository.save(newToken);
+            if (existingSession) {
+                await this.refreshTokenRepository.update(existingSession.id, {
+                    hashedToken,
+                    expiresAt
+                });
+            } else {
+                const newToken = this.refreshTokenRepository.create({
+                    userId: user.id,
+                    hashedToken,
+                    expiresAt,
+                });
+                await this.refreshTokenRepository.save(newToken);
+            }
+
+            return {
+                status: 200,
+                message: "Login successful",
+                data: { accessToken, refreshToken: rawRefreshToken },
+                error_message: null
+            };
+        } catch (err) {
+            throw new InternalServerErrorException("Failed to process login session");
         }
-
-        return {
-            status: 200,
-            message: "Login successful",
-            data: { accessToken, refreshToken: rawRefreshToken },
-            error_message: null
-        };
     }
 
     async refresh(body: RefreshDto) {
@@ -94,24 +101,28 @@ export class AuthService {
         const user = await this.userRepository.findOne({ where: { id: session.userId } });
         if (!user) throw new UnauthorizedException("User no longer exists");
 
-        // 4. ROTATE: Generate new pair
+        // 4. ROTATE: Generate new pair (Keeping tokenVersion aligned!)
         const newRawRefreshToken = randomUUID();
         const newHashedToken = await bcrypt.hash(newRawRefreshToken, 10);
-        
-        await this.refreshTokenRepository.update(session.id, {
-            hashedToken: newHashedToken,
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-        });
 
-        return {
-            status: 200,
-            message: "Session refreshed",
-            data: {
-                accessToken: this.jwtService.sign({ id: user.id, username: user.username, email: user.email }),
-                refreshToken: newRawRefreshToken
-            },
-            error_message: null
-        };
+        try {
+            await this.refreshTokenRepository.update(session.id, {
+                hashedToken: newHashedToken,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            });
+
+            return {
+                status: 200,
+                message: "Session refreshed",
+                data: {
+                    accessToken: this.jwtService.sign({ id: user.id, username: user.username, email: user.email, tokenVersion: user.tokenVersion }),
+                    refreshToken: newRawRefreshToken
+                },
+                error_message: null
+            };
+        } catch (err) {
+            throw new InternalServerErrorException("Failed to refresh session");
+        }
     }
 
     async signup(body: SignupDto) {
@@ -121,21 +132,89 @@ export class AuthService {
         const isUsernameTaken = await this.userRepository.findOne({ where: { username: body.username } });
         if (isUsernameTaken) throw new ConflictException('Username already in use');
 
-        const hashedPassword = await bcrypt.hash(body.password, 10);
+        try {
+            const hashedPassword = await bcrypt.hash(body.password, 10);
 
-        const { password, ...userData } = body;
-        const newUser = this.userRepository.create({
-            ...userData,
-            passwordHash: hashedPassword,
-        });
+            const { password, ...userData } = body;
+            const newUser = this.userRepository.create({
+                ...userData,
+                passwordHash: hashedPassword,
+            });
 
-        const savedUser = await this.userRepository.save(newUser);
+            const savedUser = await this.userRepository.save(newUser);
 
-        return {
-            status: 201,
-            message: "Signup successful",
-            data: { userId: savedUser.id },
-            error_message: null
-        };
+            return {
+                status: 201,
+                message: "Signup successful",
+                data: { userId: savedUser.id },
+                error_message: null
+            };
+        } catch (err) {
+            throw new InternalServerErrorException("An error occurred during signup");
+        }
+    }
+
+    async logout(userId: string) {
+        // Fetch user to know their current tokenVersion status
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) throw new UnauthorizedException("User not found");
+
+        try {
+            const result = await this.refreshTokenRepository.delete({ userId: userId });
+
+            if (result.affected === 0) {
+                throw new UnauthorizedException("Session not found");
+            }
+
+            // Explicitly increment version on logout to instantly kill the active short-lived Access Token!
+            await this.userRepository.update(userId, {
+                tokenVersion: user.tokenVersion + 1
+            });
+
+            return {
+                status: 200,
+                message: "Logout Successful",
+                data: null,
+                error_message: null
+            };
+        } catch (err) {
+            if (err instanceof UnauthorizedException) throw err;
+            throw new InternalServerErrorException("An error occurred during logout");
+        }
+    }
+
+    async changePassword(userId: string, body: changePasswordDto) {
+        const { oldPassword, newPassword } = body;
+
+        // 1. Fetch the user
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+
+        // 2. Verify old password
+        if (!user || !(await bcrypt.compare(oldPassword, user.passwordHash))) {
+            throw new UnauthorizedException('Incorrect old password');
+        }
+
+        try {
+            // 3. Hash the new password
+            const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+            // 4. Update password AND increment tokenVersion to kick out all other devices
+            await this.userRepository.update(userId, {
+                passwordHash: newPasswordHash,
+                tokenVersion: user.tokenVersion + 1
+            });
+
+            // 5. Delete all old refresh sessions
+            await this.refreshTokenRepository.delete({ userId: userId });
+            
+            return {
+                status: 200,
+                message: "Password changed successfully. Please log in again.",
+                data: null,
+                error_message: null
+            };
+        } catch (err) {
+            throw new InternalServerErrorException("An error occurred while changing your password");
+        }
     }
 }

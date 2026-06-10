@@ -32,7 +32,8 @@ export class AuthController {
     @UseGuards(JwtAuthGuard)
     @Post('/profile')
     async getProfile(@Req() req) {
-        const userId = req.user.userId
+      
+        const userId = req.user.id
         
         return await this.authService.getProfile(userId);
     }
@@ -40,7 +41,7 @@ export class AuthController {
     @UseGuards(JwtAuthGuard)
     @Post('/logout')
     async logout(@Req() req){
-        const userId = req.user.userId
+        const userId = req.user.id
 
         return await this.authService.logout(userId)
     }
@@ -48,7 +49,7 @@ export class AuthController {
 
     @UseGuards(JwtAuthGuard)
     @Post("/changepassword")
-    async changePassword(@Req() req, @Body() body: changePasswordDto) { // 2. Fixed missing parentheses on @Body()
+    async changePassword(@Req() req, @Body() body: changePasswordDto) { 
         const userId = req.user.id || req.user.userId;
         return await this.authService.changePassword(userId, body);
     }

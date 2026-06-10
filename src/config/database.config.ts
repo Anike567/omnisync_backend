@@ -13,4 +13,12 @@ export const getDatabaseConfig = (): TypeOrmModuleOptions => ({
   entities: [User, RefreshToken],
   synchronize: process.env.NODE_ENV !== 'production',
   logging: true,
+  poolSize : 10,
+  extra : {
+    queueLimit: 0,
+    
+    // The milliseconds before a timeout occurs when trying to acquire a connection from the pool
+    waitForConnections: true,
+    acquireTimeout: 10000,
+  }
 });

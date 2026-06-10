@@ -2,41 +2,53 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from 'src/modules/user/user.entity'; // Adjust this path to your actual User entity
+import { User } from 'src/modules/user/user.entity'; 
+import { RedisService } from 'src/core/redis/redis.service'; // Use our wrapper service
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
-    private configService: ConfigService,
     @InjectRepository(User)
-    private userRepository: Repository<User>, // 1. Inject the repository
+    private userRepository: Repository<User>,
+    private readonly redisService: RedisService // Clean, global wrapper injection
   ) {
     super({
-        jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-        ignoreExpiration: false,
-        secretOrKey: 'secretKey', // Replace with configService.get('JWT_SECRET') if using env variables
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: 'secretKey', // Replace with configService.get('JWT_SECRET') if using env variables
     });
   }
 
   async validate(payload: any) {
-    // Note: If you changed your payload key to 'sub' in AuthService, use payload.sub instead of payload.id
-    const userId = payload.id; 
+    const userId = payload.id;
+    
+    // 1. Pull token version from high-speed cache
+    let tokenVersion = await this.redisService.get<number>(`user:auth:${userId}`);
 
-    // 2. Fetch the current token version from the database
-    const user = await this.userRepository.findOne({
+    // 2. Fallback to Database if cache missing (and re-populate cache)
+    if (tokenVersion === null) {
+      const user = await this.userRepository.findOne({
         where: { id: userId },
-        select: { id: true, email: true, username: true, phoneNumber: true , tokenVersion : true}
-    });
+        select: { id: true, tokenVersion: true }
+      });
 
-    // 3. If user doesn't exist OR the token's version doesn't match the DB, reject them
-    if (!user || user.tokenVersion !== payload.tokenVersion) {
-        throw new UnauthorizedException('Session invalidated. Please log in again.');
+      if (!user) {
+        throw new UnauthorizedException('User no longer exists.');
+      }
+
+      tokenVersion = user.tokenVersion;
+      
+      // Sync cache state back up for the next request
+      await this.redisService.set(`user:auth:${userId}`, tokenVersion, 900); // 15 mins matching access token
     }
 
-    // 4. This object gets attached to your Request context as 'req.user'
-    return { userId: user.id, email: user.email, username: user.username };
+    // 3. String/Number type mismatch safely avoided via Number coercion or generic parsing
+    if (Number(tokenVersion) !== Number(payload.tokenVersion)) {
+      throw new UnauthorizedException('Session invalidated. Please log in again.');
+    }
+
+    return payload;
   }
 }

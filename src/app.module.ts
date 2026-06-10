@@ -7,6 +7,7 @@ import { getDatabaseConfig } from './config/database.config';
 import { RefreshTokenModule } from './modules/refresh-token/refresh-token.module';
 import { ImagesModule } from './images/images.module';
 import { ProductsModule } from './products/products.module';
+import { RedisModule } from './core/redis/redis.module';
 
 @Module({
   
@@ -16,11 +17,13 @@ import { ProductsModule } from './products/products.module';
       envFilePath: './.env',
     }),
     TypeOrmModule.forRoot(getDatabaseConfig()),
+    RedisModule,
     UserModule,
     AuthModule,
     RefreshTokenModule,
     ImagesModule,
-    ProductsModule
+    ProductsModule,
+    RedisModule
   ],
 })
 export class AppModule {}

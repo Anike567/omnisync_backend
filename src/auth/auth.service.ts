@@ -41,7 +41,6 @@ export class AuthService {
             error_message: null
         };
     }
-
     async login(body: LoginDto) {
         const user = await this.userRepository.findOne({ where: { email: body.email } });
         const isPasswordCorrect = await bcrypt.compare(body.password, user?.passwordHash);
@@ -53,7 +52,9 @@ export class AuthService {
         const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
         const rawRefreshToken = randomUUID();
         const hashedToken = createHash('sha256').update(rawRefreshToken).digest('hex');
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+        const tokenValiditySeconds = 7 * 24 * 60 * 60; // 7 days in seconds
+        const expiresAt = new Date(Date.now() + tokenValiditySeconds * 1000);
 
         try {
             const existingSession = await this.refreshTokenRepository.findOne({ where: { userId: user.id } });
@@ -64,10 +65,17 @@ export class AuthService {
                 const newToken = this.refreshTokenRepository.create({ userId: user.id, hashedToken, expiresAt });
                 await this.refreshTokenRepository.save(newToken);
             }
-            
-            // Set Redis with namespace and TTL matching the token longevity
+
+            // 1. Sync Access Token Version Tracking
             await this.redisService.set(`user:auth:${user.id}`, user.tokenVersion, 900);
-            
+
+            // FIX 1: Include 'expiresAt' in Redis and apply a matching 7-day TTL expiration window
+            await this.redisService.set(
+                `refresh-token:${user.id}`,
+                { hashedToken, expiresAt: expiresAt.toISOString() },
+                tokenValiditySeconds
+            );
+
             return {
                 status: 200,
                 message: "Login successful",
@@ -82,29 +90,48 @@ export class AuthService {
     async refresh(body: RefreshDto) {
         const { id, token } = body;
 
-        const session = await this.refreshTokenRepository.findOne({ where: { userId: id } });
+        let session = await this.redisService.get(`refresh-token:${id}`);
+        if (!session) {
+            session = await this.refreshTokenRepository.findOne({ where: { userId: id } });
+        }
+
         if (!session) throw new UnauthorizedException("Session not found");
 
         // 2. Validate token
         const hasherRefreshToken = createHash('sha256').update(token).digest('hex');
         const isTokenValid = hasherRefreshToken === session.hashedToken;
-       
-        if (!isTokenValid || session.expiresAt <= new Date()) {
-            await this.refreshTokenRepository.delete(session.id);
+
+        // FIX 2: Correctly parse the dynamic Redis ISO string or native DB date object
+        const sessionExpiry = typeof session.expiresAt === 'string' ? new Date(session.expiresAt) : session.expiresAt;
+
+        if (!isTokenValid || sessionExpiry <= new Date()) {
+            await this.refreshTokenRepository.delete({ userId: id });
+            await this.redisService.del(`refresh-token:${id}`);
             throw new UnauthorizedException("Session Expired, please login again");
         }
 
-        const user = await this.userRepository.findOne({ where: { id: session.userId } });
+        const user = await this.userRepository.findOne({ where: { id: id } });
         if (!user) throw new UnauthorizedException("User no longer exists");
 
         const newRawRefreshToken = randomUUID();
         const newHashedToken = createHash('sha256').update(newRawRefreshToken).digest('hex');
 
+        const tokenValiditySeconds = 7 * 24 * 60 * 60;
+        const newExpiresAt = new Date(Date.now() + tokenValiditySeconds * 1000);
+
         try {
-            await this.refreshTokenRepository.update(session.id, {
+            // Update DB session structure
+            await this.refreshTokenRepository.update({ userId: id }, {
                 hashedToken: newHashedToken,
-                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                expiresAt: newExpiresAt
             });
+
+            // FIX 3: Remember to update the Redis session storage with the new token rotation properties!
+            await this.redisService.set(
+                `refresh-token:${user.id}`,
+                { hashedToken: newHashedToken, expiresAt: newExpiresAt.toISOString() },
+                tokenValiditySeconds
+            );
 
             // Re-sync Redis version cache upon token refresh operation
             await this.redisService.set(`user:auth:${user.id}`, user.tokenVersion, 900);
@@ -113,7 +140,7 @@ export class AuthService {
                 status: 200,
                 message: "Session refreshed",
                 data: {
-                    accessToken: this.jwtService.sign({ id: user.id, username: user.username, email: user.email, tokenVersion: user.tokenVersion }),
+                    accessToken: this.jwtService.sign({ id: user.id, username: user.username, email: user.email, tokenVersion: user.tokenVersion }, { expiresIn: '15m' }),
                     refreshToken: newRawRefreshToken
                 },
                 error_message: null
@@ -197,10 +224,10 @@ export class AuthService {
             });
 
             await this.refreshTokenRepository.delete({ userId: userId });
-            
+
             // Clean up the Redis token version record immediately
             await this.redisService.del(`user:auth:${userId}`);
-            
+
             return {
                 status: 200,
                 message: "Password changed successfully. Please log in again.",

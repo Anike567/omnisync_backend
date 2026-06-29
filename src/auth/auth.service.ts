@@ -12,6 +12,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { SignupDto } from './dto/signup.dto';
 import { changePasswordDto } from './dto/changePassword.dto';
+import { createHash } from 'node:crypto';
 import { RedisService } from 'src/core/redis/redis.service'; // Switched to wrapper
 
 @Injectable()
@@ -43,14 +44,15 @@ export class AuthService {
 
     async login(body: LoginDto) {
         const user = await this.userRepository.findOne({ where: { email: body.email } });
-        if (!user || !(await bcrypt.compare(body.password, user.passwordHash))) {
+        const isPasswordCorrect = await bcrypt.compare(body.password, user?.passwordHash);
+        if (!user || !isPasswordCorrect) {
             throw new UnauthorizedException('Invalid email or password');
         }
 
         const payload = { id: user.id, username: user.username, email: user.email, tokenVersion: user.tokenVersion };
         const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
         const rawRefreshToken = randomUUID();
-        const hashedToken = await bcrypt.hash(rawRefreshToken, 10);
+        const hashedToken = createHash('sha256').update(rawRefreshToken).digest('hex');
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
         try {
@@ -83,7 +85,10 @@ export class AuthService {
         const session = await this.refreshTokenRepository.findOne({ where: { userId: id } });
         if (!session) throw new UnauthorizedException("Session not found");
 
-        const isTokenValid = await bcrypt.compare(token, session.hashedToken);
+        // 2. Validate token
+        const hasherRefreshToken = createHash('sha256').update(token).digest('hex');
+        const isTokenValid = hasherRefreshToken === session.hashedToken;
+       
         if (!isTokenValid || session.expiresAt <= new Date()) {
             await this.refreshTokenRepository.delete(session.id);
             throw new UnauthorizedException("Session Expired, please login again");
@@ -93,7 +98,7 @@ export class AuthService {
         if (!user) throw new UnauthorizedException("User no longer exists");
 
         const newRawRefreshToken = randomUUID();
-        const newHashedToken = await bcrypt.hash(newRawRefreshToken, 10);
+        const newHashedToken = createHash('sha256').update(newRawRefreshToken).digest('hex');
 
         try {
             await this.refreshTokenRepository.update(session.id, {

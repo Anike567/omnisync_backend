@@ -14,43 +14,33 @@ export class AuthController {
 
     constructor(private readonly authService: AuthService) { }
     @Post('/login')
-    async login(@Body() body: LoginDto) {
-        return await this.authService.login(body);
+    login(@Body() body: LoginDto) {
+        return this.authService.login(body);
     }
 
     @Post('/refresh') 
-    async refresh(@Body() body:RefreshDto){
-        return await this.authService.refresh(body);
+    refresh(@Body() body:RefreshDto){
+        return this.authService.refresh(body);
     }
 
 
     @Post('/signup')
-    async signup(@Body() body: SignupDto) {
-        return await this.authService.signup(body);
-    }
-
-    @UseGuards(JwtAuthGuard)
-    @Post('/profile')
-    async getProfile(@Req() req) {
-      
-        const userId = req.user.id
-        
-        return await this.authService.getProfile(userId);
+    signup(@Body() body: SignupDto) {
+        return this.authService.signup(body);
     }
 
     @UseGuards(JwtAuthGuard)
     @Post('/logout')
-    async logout(@Req() req){
+    logout(@Req() req){
         const userId = req.user.id
-
-        return await this.authService.logout(userId)
+        return this.authService.logout(userId)
     }
 
 
     @UseGuards(JwtAuthGuard)
     @Post("/changepassword")
-    async changePassword(@Req() req, @Body() body: changePasswordDto) { 
+    changePassword(@Req() req, @Body() body: changePasswordDto) { 
         const userId = req.user.id || req.user.userId;
-        return await this.authService.changePassword(userId, body);
+        return this.authService.changePassword(userId, body);
     }
 }

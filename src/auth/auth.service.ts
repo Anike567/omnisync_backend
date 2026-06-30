@@ -26,21 +26,7 @@ export class AuthService {
         private readonly redisService: RedisService // Managed wrapper instance
     ) { }
 
-    async getProfile(userId: string) {
-        const user = await this.userRepository.findOne({
-            where: { id: userId },
-            select: { id: true, email: true, username: true, phoneNumber: true }
-        });
-
-        if (!user) throw new UnauthorizedException('User not found');
-
-        return {
-            status: 200,
-            message: "Profile retrieved successfully",
-            data: user,
-            error_message: null
-        };
-    }
+  
     async login(body: LoginDto) {
         const user = await this.userRepository.findOne({ where: { email: body.email } });
         const isPasswordCorrect = await bcrypt.compare(body.password, user?.passwordHash);
@@ -183,26 +169,23 @@ export class AuthService {
         if (!user) throw new UnauthorizedException("User not found");
 
         try {
-            const result = await this.refreshTokenRepository.delete({ userId: userId });
-            if (result.affected === 0) {
-                throw new UnauthorizedException("Session not found");
-            }
+            // Clean out data stores smoothly without crashing if rows were pre-deleted
+            await this.refreshTokenRepository.delete({ userId });
+            await this.redisService.del(`refresh-token:${userId}`);
 
+            // Bump version to guarantee outstanding access tokens stop working instantly
             await this.userRepository.update(userId, {
                 tokenVersion: user.tokenVersion + 1
             });
-
-            // Wipe specific namespaced session out of Redis instantly
             await this.redisService.del(`user:auth:${userId}`);
 
             return {
                 status: 200,
-                message: "Logout Successful",
+                message: "Logout successful",
                 data: null,
                 error_message: null
             };
         } catch (err) {
-            if (err instanceof UnauthorizedException) throw err;
             throw new InternalServerErrorException("An error occurred during logout");
         }
     }

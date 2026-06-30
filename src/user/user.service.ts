@@ -58,9 +58,24 @@ export class UserService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    await this.findOneById(id); // Reuses validation logic to throw 404 if missing
-    await this.userRepository.update(id, updateUserDto);
-    return { message: 'User updated successfully' };
+    try {
+      const userAvailable = await this.findOneById(id);
+      if (!userAvailable) {
+        throw new NotFoundException("User not found");
+      }
+      const updatedUser = await this.userRepository.update(id, updateUserDto);
+      return {
+        status: 200,
+        message: "Profile retrieved successfully",
+        data: updatedUser,
+        error_message: null
+      };;
+    }
+    
+    catch (err) {
+      console.log(err);
+      throw new InternalServerErrorException("Something went wrong try please again later");
+    }
   }
 
   async remove(id: string) {

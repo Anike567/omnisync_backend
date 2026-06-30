@@ -25,9 +25,10 @@ export class UserController {
   }
 
   // Matches: PATCH /user/:id
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.userService.update(id, updateUserDto);
+  @Patch('/')
+  update( @Req() req, @Body() updateUserDto: UpdateUserDto) {
+    const userId = req.user.id
+    return this.userService.update(userId, updateUserDto);
   }
 
   // Matches: DELETE /user/:id

@@ -9,6 +9,7 @@ import { ImagesModule } from './images/images.module';
 import { ProductsModule } from './products/products.module';
 import { RedisModule } from './core/redis/redis.module';
 import { UserModule } from './user/user.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   
@@ -24,7 +25,8 @@ import { UserModule } from './user/user.module';
     RefreshTokenModule,
     ImagesModule,
     ProductsModule,
-    RedisModule
+    RedisModule,
+    SyncModule
   ],
 })
 export class AppModule {}
